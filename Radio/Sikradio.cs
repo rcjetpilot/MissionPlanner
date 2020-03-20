@@ -1,4 +1,7 @@
-﻿using System;
+﻿using log4net;
+using MissionPlanner.Comms;
+using MissionPlanner.Utilities;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -8,19 +11,12 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
-using log4net;
-using MissionPlanner.Comms;
-using MissionPlanner.Radio;
 using uploader;
 
-namespace MissionPlanner
+namespace MissionPlanner.Radio
 {
     public partial class Sikradio : UserControl
     {
-        public delegate void LogEventHandler(string message, int level = 0);
-
-        public delegate void ProgressEventHandler(double completed);
-
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private bool beta;
@@ -59,9 +55,9 @@ S15: MAX_WINDOW=131
             NETID.DataSource = Enumerable.Range(0, 500).ToArray();
             RNETID.DataSource = Enumerable.Range(0, 500).ToArray();
 
-            var dict = Enum.GetValues(typeof (mavlink_option))
+            var dict = Enum.GetValues(typeof(mavlink_option))
                 .Cast<mavlink_option>()
-                .ToDictionary(t => (int) t, t => t.ToString());
+                .ToDictionary(t => (int)t, t => t.ToString());
 
             MAVLINK.DisplayMember = "Value";
             MAVLINK.ValueMember = "Key";
@@ -85,43 +81,43 @@ S15: MAX_WINDOW=131
             {
                 if (beta)
                 {
-                    return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/beta/radio~hm_trp.ihx", firmwarefile);
+                    return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/beta/radio~hm_trp.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio~hm_trp.ihx",
+                return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/stable/radio~hm_trp.ihx",
                     firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900)
             {
                 if (beta)
                 {
-                    return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/beta/radio~rfd900.ihx", firmwarefile);
+                    return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/beta/radio~rfd900.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio~rfd900.ihx", firmwarefile);
+                return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/stable/radio~rfd900.ihx", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900A)
             {
                 if (beta)
                 {
-                    return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/beta/radio~rfd900a.ihx",
+                    return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/beta/radio~rfd900a.ihx",
                         firmwarefile);
                 }
-                return Common.getFilefromNet("http://firmware.ardupilot.org/SiK/stable/radio~rfd900a.ihx", firmwarefile);
+                return Download.getFilefromNet("https://firmware.ardupilot.org/SiK/stable/radio~rfd900a.ihx", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900U)
             {
                 if (beta)
                 {
-                    return Common.getFilefromNet("http://files.rfdesign.com.au/Files/firmware/MPSiK%20V2.6%20rfd900u.ihx", firmwarefile);
+                    return Download.getFilefromNet("https://files.rfdesign.com.au/Files/firmware/MPSiK%20V2.6%20rfd900u.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://files.rfdesign.com.au/Files/firmware/RFDSiK%20V1.9%20rfd900u.ihx", firmwarefile);
+                return Download.getFilefromNet("https://files.rfdesign.com.au/Files/firmware/RFDSiK%20V1.9%20rfd900u.ihx", firmwarefile);
             }
             if (device == Uploader.Board.DEVICE_ID_RFD900P)
             {
                 if (beta)
                 {
-                    return Common.getFilefromNet("http://files.rfdesign.com.au/Files/firmware/MPSiK%20V2.6%20rfd900p.ihx", firmwarefile);
+                    return Download.getFilefromNet("https://files.rfdesign.com.au/Files/firmware/MPSiK%20V2.6%20rfd900p.ihx", firmwarefile);
                 }
-                return Common.getFilefromNet("http://files.rfdesign.com.au/Files/firmware/RFDSiK%20V1.9%20rfd900p.ihx", firmwarefile);
+                return Download.getFilefromNet("https://files.rfdesign.com.au/Files/firmware/RFDSiK%20V1.9%20rfd900p.ihx", firmwarefile);
             }
             return false;
         }
@@ -142,7 +138,7 @@ S15: MAX_WINDOW=131
                     }
                     catch (Exception ex)
                     {
-                        CustomMessageBox.Show("Error copying file\n" + ex, "ERROR");
+                        MsgBox.CustomMessageBox.Show("Error copying file\n" + ex, "ERROR");
                         return false;
                     }
                     return true;
@@ -256,7 +252,7 @@ S15: MAX_WINDOW=131
                 }
                 catch (Exception ex)
                 {
-                    CustomMessageBox.Show("Error " + ex);
+                    MsgBox.CustomMessageBox.Show("Error " + ex);
                 }
             }
 
@@ -269,7 +265,7 @@ S15: MAX_WINDOW=131
             }
             catch
             {
-                CustomMessageBox.Show("Invalid ComPort or in use");
+                MsgBox.CustomMessageBox.Show("Invalid ComPort or in use");
                 return;
             }
 
@@ -326,7 +322,7 @@ S15: MAX_WINDOW=131
                 }
                 catch
                 {
-                    CustomMessageBox.Show("Error opening port", "Error");
+                    MsgBox.CustomMessageBox.Show("Error opening port", "Error");
                     return;
                 }
 
@@ -371,7 +367,7 @@ S15: MAX_WINDOW=131
                 }
                 catch
                 {
-                    CustomMessageBox.Show("Failed to sync with Radio");
+                    MsgBox.CustomMessageBox.Show("Failed to sync with Radio");
                     goto exit;
                 }
 
@@ -391,7 +387,7 @@ S15: MAX_WINDOW=131
                     }
                     catch
                     {
-                        CustomMessageBox.Show("Bad Firmware File");
+                        MsgBox.CustomMessageBox.Show("Bad Firmware File");
                         goto exit;
                     }
 
@@ -402,20 +398,20 @@ S15: MAX_WINDOW=131
                     }
                     catch (Exception ex)
                     {
-                        CustomMessageBox.Show("Upload Failed " + ex.Message);
+                        MsgBox.CustomMessageBox.Show("Upload Failed " + ex.Message);
                     }
                 }
                 else
                 {
-                    CustomMessageBox.Show("Failed to download new firmware");
+                    MsgBox.CustomMessageBox.Show("Failed to download new firmware");
                 }
             }
             else
             {
-                CustomMessageBox.Show("Failed to identify Radio");
+                MsgBox.CustomMessageBox.Show("Failed to identify Radio");
             }
 
-            exit:
+        exit:
             if (comPort.IsOpen)
                 comPort.Close();
         }
@@ -424,7 +420,7 @@ S15: MAX_WINDOW=131
         {
             try
             {
-                Progressbar.Value = (int) (completed*100);
+                Progressbar.Value = (int)(completed * 100);
                 Application.DoEvents();
             }
             catch
@@ -474,7 +470,7 @@ S15: MAX_WINDOW=131
         {
             try
             {
-                Progressbar.Value = (int)Math.Min (completed*100,100);
+                Progressbar.Value = (int)Math.Min(completed * 100, 100);
                 Application.DoEvents();
             }
             catch
@@ -504,7 +500,7 @@ S15: MAX_WINDOW=131
             }
             catch
             {
-                CustomMessageBox.Show("Invalid ComPort or in use");
+                MsgBox.CustomMessageBox.Show("Invalid ComPort or in use");
                 return;
             }
 
@@ -525,7 +521,7 @@ S15: MAX_WINDOW=131
                     // remote
                     var answer = doCommand(comPort, "RTI5", true);
 
-                    var items = answer.Split(new[] {'\n'}, StringSplitOptions.RemoveEmptyEntries);
+                    var items = answer.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
                     foreach (var item in items)
                     {
@@ -541,9 +537,9 @@ S15: MAX_WINDOW=131
 
                                 if (controls.Length > 0)
                                 {
-                                    if (controls[0].GetType() == typeof (CheckBox))
+                                    if (controls[0].GetType() == typeof(CheckBox))
                                     {
-                                        var value = ((CheckBox) controls[0]).Checked ? "1" : "0";
+                                        var value = ((CheckBox)controls[0]).Checked ? "1" : "0";
 
                                         if (value != values[2].Trim())
                                         {
@@ -563,7 +559,7 @@ S15: MAX_WINDOW=131
                                                 }
                                                 else
                                                 {
-                                                    CustomMessageBox.Show("Set Command error");
+                                                    MsgBox.CustomMessageBox.Show("Set Command error");
                                                 }
                                             }
                                         }
@@ -573,10 +569,10 @@ S15: MAX_WINDOW=131
                                     }
                                     else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
-                                        if (((ComboBox) controls[0]).SelectedValue.ToString() != values[2].Trim())
+                                        if (((ComboBox)controls[0]).SelectedValue.ToString() != values[2].Trim())
                                         {
                                             var cmdanswer = doCommand(comPort,
-                                                "RTS" + values[0].Trim().TrimStart('S') + "=" + ((ComboBox) controls[0]).SelectedValue +
+                                                "RTS" + values[0].Trim().TrimStart('S') + "=" + ((ComboBox)controls[0]).SelectedValue +
                                                 "\r");
 
                                             if (cmdanswer.Contains("OK"))
@@ -584,7 +580,7 @@ S15: MAX_WINDOW=131
                                             }
                                             else
                                             {
-                                                CustomMessageBox.Show("Set Command error");
+                                                MsgBox.CustomMessageBox.Show("Set Command error");
                                             }
                                         }
                                     }
@@ -600,7 +596,7 @@ S15: MAX_WINDOW=131
                                             }
                                             else
                                             {
-                                                CustomMessageBox.Show("Set Command error");
+                                                MsgBox.CustomMessageBox.Show("Set Command error");
                                             }
                                         }
                                     }
@@ -618,7 +614,7 @@ S15: MAX_WINDOW=131
 
                     var answer = doCommand(comPort, "ATI5", true);
 
-                    var items = answer.Split(new[] {'\n'}, StringSplitOptions.RemoveEmptyEntries);
+                    var items = answer.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
                     foreach (var item in items)
                     {
@@ -634,9 +630,9 @@ S15: MAX_WINDOW=131
 
                                 if (controls.Length > 0)
                                 {
-                                    if (controls[0].GetType() == typeof (CheckBox))
+                                    if (controls[0].GetType() == typeof(CheckBox))
                                     {
-                                        var value = ((CheckBox) controls[0]).Checked ? "1" : "0";
+                                        var value = ((CheckBox)controls[0]).Checked ? "1" : "0";
 
                                         if (value != values[2].Trim())
                                         {
@@ -648,7 +644,7 @@ S15: MAX_WINDOW=131
                                             }
                                             else
                                             {
-                                                CustomMessageBox.Show("Set Command error");
+                                                MsgBox.CustomMessageBox.Show("Set Command error");
                                             }
                                         }
                                     }
@@ -657,10 +653,10 @@ S15: MAX_WINDOW=131
                                     }
                                     else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
-                                        if (((ComboBox) controls[0]).SelectedValue.ToString() != values[2].Trim())
+                                        if (((ComboBox)controls[0]).SelectedValue.ToString() != values[2].Trim())
                                         {
                                             var cmdanswer = doCommand(comPort,
-                                                "ATS" + values[0].Trim().TrimStart('S') + "=" + ((ComboBox) controls[0]).SelectedValue +
+                                                "ATS" + values[0].Trim().TrimStart('S') + "=" + ((ComboBox)controls[0]).SelectedValue +
                                                 "\r");
 
                                             if (cmdanswer.Contains("OK"))
@@ -668,7 +664,7 @@ S15: MAX_WINDOW=131
                                             }
                                             else
                                             {
-                                                CustomMessageBox.Show("Set Command error");
+                                                MsgBox.CustomMessageBox.Show("Set Command error");
                                             }
                                         }
                                     }
@@ -684,7 +680,7 @@ S15: MAX_WINDOW=131
                                             }
                                             else
                                             {
-                                                CustomMessageBox.Show("Set Command error");
+                                                MsgBox.CustomMessageBox.Show("Set Command error");
                                             }
                                         }
                                     }
@@ -730,7 +726,7 @@ S15: MAX_WINDOW=131
                 doCommand(comPort, "ATZ");
 
                 lbl_status.Text = "Fail";
-                CustomMessageBox.Show("Failed to enter command mode");
+                MsgBox.CustomMessageBox.Show("Failed to enter command mode");
             }
 
 
@@ -804,7 +800,7 @@ S15: MAX_WINDOW=131
             }
             catch
             {
-                CustomMessageBox.Show("Invalid ComPort or in use");
+                MsgBox.CustomMessageBox.Show("Invalid ComPort or in use");
                 return;
             }
 
@@ -827,12 +823,12 @@ S15: MAX_WINDOW=131
 
                     var freqstring = doCommand(comPort, "ATI3").Trim();
 
-                    if(freqstring.ToLower().Contains('x'))
+                    if (freqstring.ToLower().Contains('x'))
                         style = NumberStyles.AllowHexSpecifier;
 
                     var freq =
                         (Uploader.Frequency)
-                            Enum.Parse(typeof (Uploader.Frequency),
+                            Enum.Parse(typeof(Uploader.Frequency),
                                 int.Parse(freqstring.ToLower().Replace("x", ""), style).ToString());
 
                     ATI3.Text = freq.ToString();
@@ -846,7 +842,7 @@ S15: MAX_WINDOW=131
 
                     var board =
                         (Uploader.Board)
-                            Enum.Parse(typeof (Uploader.Board),
+                            Enum.Parse(typeof(Uploader.Board),
                                 int.Parse(boardstring.ToLower().Replace("x", ""), style).ToString());
 
                     ATI2.Text = board.ToString();
@@ -901,7 +897,7 @@ S15: MAX_WINDOW=131
                     {
                         //if (item.StartsWith("S"))
                         {
-                            var values = item.Split(new char[] { ':', '='}, StringSplitOptions.RemoveEmptyEntries);
+                            var values = item.Split(new char[] { ':', '=' }, StringSplitOptions.RemoveEmptyEntries);
 
                             if (values.Length == 3)
                             {
@@ -915,20 +911,20 @@ S15: MAX_WINDOW=131
 
                                     if (controls[0] is CheckBox)
                                     {
-                                        ((CheckBox) controls[0]).Checked = values[2].Trim() == "1";
+                                        ((CheckBox)controls[0]).Checked = values[2].Trim() == "1";
                                     }
                                     else if (controls[0] is TextBox)
                                     {
-                                        ((TextBox) controls[0]).Text = values[2].Trim();
+                                        ((TextBox)controls[0]).Text = values[2].Trim();
                                     }
                                     else if (controls[0].Name.Contains("MAVLINK")) //
                                     {
-                                        var ans = Enum.Parse(typeof (mavlink_option), values[2].Trim());
-                                        ((ComboBox) controls[0]).Text = ans.ToString();
+                                        var ans = Enum.Parse(typeof(mavlink_option), values[2].Trim());
+                                        ((ComboBox)controls[0]).Text = ans.ToString();
                                     }
                                     else if (controls[0] is ComboBox)
                                     {
-                                        ((ComboBox) controls[0]).Text = values[2].Trim();
+                                        ((ComboBox)controls[0]).Text = values[2].Trim();
                                     }
                                 }
                             }
@@ -984,20 +980,20 @@ S15: MAX_WINDOW=131
 
                                 if (controls[0] is CheckBox)
                                 {
-                                    ((CheckBox) controls[0]).Checked = values[2].Trim() == "1";
+                                    ((CheckBox)controls[0]).Checked = values[2].Trim() == "1";
                                 }
                                 else if (controls[0] is TextBox)
                                 {
-                                    ((TextBox) controls[0]).Text = values[2].Trim();
+                                    ((TextBox)controls[0]).Text = values[2].Trim();
                                 }
                                 else if (controls[0].Name.Contains("MAVLINK")) //
                                 {
-                                    var ans = Enum.Parse(typeof (mavlink_option), values[2].Trim());
-                                    ((ComboBox) controls[0]).Text = ans.ToString();
+                                    var ans = Enum.Parse(typeof(mavlink_option), values[2].Trim());
+                                    ((ComboBox)controls[0]).Text = ans.ToString();
                                 }
                                 else if (controls[0] is ComboBox)
                                 {
-                                    ((ComboBox) controls[0]).Text = values[2].Trim();
+                                    ((ComboBox)controls[0]).Text = values[2].Trim();
                                 }
                             }
                             else
@@ -1030,7 +1026,7 @@ S15: MAX_WINDOW=131
                     doCommand(comPort, "ATO");
 
                     lbl_status.Text = "Fail";
-                    CustomMessageBox.Show("Failed to enter command mode");
+                    MsgBox.CustomMessageBox.Show("Failed to enter command mode");
                 }
 
                 comPort.Close();
@@ -1050,7 +1046,7 @@ S15: MAX_WINDOW=131
                 {
                 }
                 lbl_status.Text = "Error";
-                CustomMessageBox.Show("Error during read " + ex);
+                MsgBox.CustomMessageBox.Show("Error during read " + ex);
             }
         }
 
@@ -1063,8 +1059,8 @@ S15: MAX_WINDOW=131
             {
                 if (comPort.BytesToRead > 0)
                 {
-                    var data = (byte) comPort.ReadByte();
-                    sb.Append((char) data);
+                    var data = (byte)comPort.ReadByte();
+                    sb.Append((char)data);
                     if (data == '\n')
                         break;
                 }
@@ -1144,7 +1140,7 @@ S15: MAX_WINDOW=131
                 // setup a known enviroment
                 comPort.Write("ATO\r\n");
 
-                retry:
+            retry:
 
                 // wait
                 Sleep(1500, comPort);
@@ -1218,7 +1214,7 @@ S15: MAX_WINDOW=131
 
         private void linkLabel1_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
         {
-            CustomMessageBox.Show(@"The Sik Radios have 2 status LEDs, one red and one green.
+            MsgBox.CustomMessageBox.Show(@"The Sik Radios have 2 status LEDs, one red and one green.
 green LED blinking - searching for another radio 
 green LED solid - link is established with another radio 
 red LED flashing - transmitting data 
@@ -1240,7 +1236,7 @@ red LED solid - in firmware update mode");
             }
             catch
             {
-                CustomMessageBox.Show("Invalid ComPort or in use");
+                MsgBox.CustomMessageBox.Show("Invalid ComPort or in use");
                 return;
             }
 
@@ -1273,7 +1269,7 @@ red LED solid - in firmware update mode");
                 doCommand(comPort, "ATO");
 
                 lbl_status.Text = "Fail";
-                CustomMessageBox.Show("Failed to enter command mode");
+                MsgBox.CustomMessageBox.Show("Failed to enter command mode");
             }
 
             if (comPort.IsOpen)
@@ -1288,7 +1284,7 @@ red LED solid - in firmware update mode");
         private void Progressbar_Click(object sender, EventArgs e)
         {
             beta = !beta;
-            CustomMessageBox.Show("Beta set to " + beta);
+            MsgBox.CustomMessageBox.Show("Beta set to " + beta);
         }
 
         private void linkLabel_mavlink_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
@@ -1323,7 +1319,7 @@ red LED solid - in firmware update mode");
             string item = txt.Text;
             if (!(Regex.IsMatch(item, "^[0-9a-fA-F]+$")))
             {
-                if(item.Length != 0)
+                if (item.Length != 0)
                     txt.Text = item.Remove(item.Length - 1, 1);
                 txt.SelectionStart = txt.Text.Length;
             }

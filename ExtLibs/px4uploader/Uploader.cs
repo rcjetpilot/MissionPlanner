@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.IO.Ports;
 using System.IO;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Parameters;
@@ -11,12 +10,12 @@ using Org.BouncyCastle.Security;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Xml;
+using MissionPlanner.Comms;
 
 namespace px4uploader
 {
     public class Uploader: IDisposable
     {
-
         public delegate void LogEventHandler(string message, int level = 0);
 
         public delegate void ProgressEventHandler(double completed);
@@ -24,7 +23,7 @@ namespace px4uploader
         public event LogEventHandler LogEvent;
         public event ProgressEventHandler ProgressEvent;
 
-        SerialPort port;
+        ICommsSerial port;
         Uploader self;
 
         public bool skipotp = false;
@@ -69,7 +68,7 @@ namespace px4uploader
         }
 
         public const byte BL_REV_MIN = 2;//	# minimum supported bootloader protocol 
-        public const byte BL_REV_MAX = 5;//	# maximum supported bootloader protocol 
+        public const byte BL_REV_MAX = 10;//	# maximum supported bootloader protocol
         public const byte PROG_MULTI_MAX = 60;//		# protocol max is 255, must be multiple of 4
         public const byte READ_MULTI_MAX = 60;//		# protocol max is 255, something overflows with >= 64
 
@@ -97,24 +96,17 @@ namespace px4uploader
             readcerts();
         }
 
-        public Uploader(string port, int baudrate)
+        public Uploader(ICommsSerial port)
         {
             self = this;
 
-            if (port.StartsWith("/"))
-                if (!File.Exists(port))
-                    throw new Exception("No such device");
-
-            this.port = new SerialPort(port, baudrate);
+            this.port = port;
             this.port.ReadTimeout = 50;
             this.port.WriteTimeout = 50;
 
             try
             {
                 Console.Write("open");
-                if (port.StartsWith("/"))
-                    if (!File.Exists(port))
-                        throw new Exception("No such device");
                 this.port.Open();
                 this.port.Write("reboot -b\r");
                 Console.WriteLine("..done");
@@ -136,10 +128,15 @@ namespace px4uploader
             }
         }
 
+        public Uploader(string port, int baudrate): this(new SerialPort(port, baudrate))
+        {
+        }
+
         public void close()
         {
             try
             {
+                port.BaseStream.Flush();
                 port.Close();
             }
             catch { }
@@ -164,7 +161,15 @@ namespace px4uploader
             string vendor = "";
             string publickey = "";
 
-            using (XmlTextReader xmlreader = new XmlTextReader(System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + Path.DirectorySeparatorChar + @"validcertificates.xml"))
+            var file = System.IO.Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) +
+                       Path.DirectorySeparatorChar + @"validcertificates.xml";
+
+            if (!File.Exists(file))
+            {
+                return;
+            }
+
+            using (XmlTextReader xmlreader = new XmlTextReader(file))
             {
                 while (xmlreader.Read())
                 {
@@ -365,7 +370,7 @@ namespace px4uploader
                 __send(new byte[] { (byte)Code.EOC });
                 byte[] ans = __recv(4);
                 __getSync();
-                Array.Reverse(ans);
+                ans = ans.Reverse().ToArray();
                 Array.Copy(ans, 0, sn, a, 4);
             }
 
@@ -405,7 +410,6 @@ namespace px4uploader
         public int __recv_int()
         {
             byte[] raw = __recv(4);
-            //raw.Reverse();
             int val = BitConverter.ToInt32(raw, 0);
             return val;
         }
@@ -456,7 +460,6 @@ namespace px4uploader
             __send(new byte[] { (byte)Code.GET_DEVICE, (byte)param, (byte)Code.EOC });
             int info = __recv_int();
             __getSync();
-            //Array.Reverse(raw);
             return info;
         }
 
@@ -673,8 +676,12 @@ namespace px4uploader
 
             //Make sure we are doing the right thing
             if (self.board_type != fw.board_id)
-                throw new Exception("Firmware not suitable for this board");
-            if (self.fw_maxsize < fw.image_size)
+            {
+                if (!(self.board_type == 33 && fw.board_id == 9))
+                    throw new Exception("Firmware not suitable for this board");
+            }
+
+            if (self.fw_maxsize < fw.image_size && self.fw_maxsize != 0)
                 throw new Exception("Firmware image is too large for this board");
 
             print("erase...");
