@@ -1,19 +1,15 @@
-﻿using System;
+﻿using BrightIdeasSoftware;
+using log4net;
+using MissionPlanner.Controls;
+using MissionPlanner.Utilities;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using BrightIdeasSoftware;
-using log4net;
-using MissionPlanner.Controls;
-using MissionPlanner.Utilities;
 
 namespace MissionPlanner.Log
 {
@@ -33,9 +29,28 @@ namespace MissionPlanner.Log
 
         private void LogIndex_Load(object sender, EventArgs e)
         {
-            createFileList(Settings.Instance.LogDir);
+        }
 
-            System.Threading.ThreadPool.QueueUserWorkItem(queueRunner);
+        private List<string> GetFiles(string path, string pattern)
+        {
+            var files = new List<string>();
+            var directories = new string[] { };
+
+            try
+            {
+                files.AddRange(Directory.GetFiles(path, pattern, SearchOption.TopDirectoryOnly));
+                directories = Directory.GetDirectories(path);
+            }
+            catch (UnauthorizedAccessException) { }
+
+            foreach (var directory in directories)
+                try
+                {
+                    files.AddRange(GetFiles(directory, pattern));
+                }
+                catch (UnauthorizedAccessException) { }
+
+            return files;
         }
 
         List<string> files = new List<string>();
@@ -44,43 +59,54 @@ namespace MissionPlanner.Log
         {
             Loading.ShowLoading("Scanning for files", this);
 
-            string[] files1 = Directory.GetFiles(directory.ToString(), "*.tlog", SearchOption.AllDirectories);
-            string[] files2 = Directory.GetFiles(directory.ToString(), "*.bin", SearchOption.AllDirectories);
-            string[] files3 = Directory.GetFiles(directory.ToString(), "*.log", SearchOption.AllDirectories);
+            var files1 = GetFiles(directory.ToString(), "*.tlog");
+            var files2 = GetFiles(directory.ToString(), "*.bin");
+            var files3 = GetFiles(directory.ToString(), "*.log");
 
-            files.Clear();
+            lock (files)
+            {
+                files.Clear();
 
-            files.AddRange(files1);
-            files.AddRange(files2);
-            files.AddRange(files3);
+                files.AddRange(files1);
+                files.AddRange(files2);
+                files.AddRange(files3);
+            }
         }
 
         private void queueRunner(object nothing)
         {
-            Parallel.ForEach(files, file => { ProcessFile(file); });
+            a = 0;
+            lock (files)
+                Parallel.ForEach(files,
+                    //new ParallelOptions() { MaxDegreeOfParallelism = 8 },
+                    async (file) => { await ProcessFile(file).ConfigureAwait(false); });
 
             Loading.ShowLoading("Populating Data", this);
 
-            objectListView1.AddObjects(logs);
+            this.BeginInvokeIfRequired(a =>
+            {
+                objectListView1.AddObjects(logs);
+            });
 
             Loading.Close();
         }
 
-        private void ProcessFile(string file)
+        private async Task ProcessFile(string file)
         {
             if (File.Exists(file))
-                processbg(file);
+                await processbg(file).ConfigureAwait(false);
         }
 
         List<object> logs = new List<object>();
-
-        void processbg(string file)
+        int a = 0;
+        async Task processbg(string file)
         {
-            Loading.ShowLoading(file, this);
+            a++;
+            Loading.ShowLoading(a + "/" + files.Count + " " + file, this);
 
             if (!File.Exists(file + ".jpg"))
             {
-                LogMap.MapLogs(new string[] {file});
+                LogMap.MapLogs(new string[] { file });
             }
 
             var loginfo = new loginfo();
@@ -94,12 +120,12 @@ namespace MissionPlanner.Log
             }
             catch
             {
-                
+
             }
 
             if (File.Exists(file + ".jpg"))
             {
-                loginfo.img = new Bitmap(file + ".jpg");
+                loginfo.imgfile = file + ".jpg";
             }
 
             if (file.ToLower().EndsWith(".tlog"))
@@ -109,7 +135,8 @@ namespace MissionPlanner.Log
                     try
                     {
                         mine.logplaybackfile =
-                            new BinaryReader(File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read));
+                            new BinaryReader(new BufferedStream(
+                                File.Open(file, FileMode.Open, FileAccess.Read, FileShare.Read), 1024 * 1024 * 5));
                     }
                     catch (Exception ex)
                     {
@@ -121,7 +148,7 @@ namespace MissionPlanner.Log
                     mine.speechenabled = false;
 
                     // file is to small
-                    if (mine.logplaybackfile.BaseStream.Length < 1024*4)
+                    if (mine.logplaybackfile.BaseStream.Length < 1024 * 4)
                         return;
 
                     mine.getHeartBeat();
@@ -146,27 +173,35 @@ namespace MissionPlanner.Log
                     var length = mine.logplaybackfile.BaseStream.Length;
 
                     var a = 0;
+                    var gpssec = 0;
+                    var updates = 0;
 
                     // abandon last 100 bytes
-                    while (mine.logplaybackfile.BaseStream.Position < (length-100))
+                    while (mine.logplaybackfile.BaseStream.Position < (length - 100))
                     {
-                        var packet = mine.readPacket();
+                        var packet = await mine.readPacketAsync().ConfigureAwait(false);
 
                         // gcs
-                        if(packet.sysid == 255)
+                        if (packet.sysid == 255)
                             continue;
 
                         if (packet.msgid == (uint)MAVLink.MAVLINK_MSG_ID.CAMERA_FEEDBACK)
                             loginfo.CamMSG++;
 
-                        if (a % 10 == 0)
+                        if (a % 200 == 0 || mine.MAV.cs.gpstime.Second != gpssec)
+                        {
+                            updates++;
+                            gpssec = mine.MAV.cs.gpstime.Second;
                             mine.MAV.cs.UpdateCurrentSettings(null, true, mine);
+                        }
 
                         a++;
 
                         if (mine.lastlogread > end)
                             end = mine.lastlogread;
                     }
+
+                    log.Info("Finished reading " + file + " with " + a + " packets and " + updates + " updates");
 
                     loginfo.Home = mine.MAV.cs.Location;
 
@@ -177,9 +212,9 @@ namespace MissionPlanner.Log
                     loginfo.Duration = (end - start).ToString();
                 }
             }
-            else if (file.ToLower().EndsWith(".bin") || file.ToLower().EndsWith(".log"))
+            else if (file.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".log", StringComparison.OrdinalIgnoreCase))
             {
-                using (CollectionBuffer colbuf = new CollectionBuffer(File.OpenRead(file)))
+                using (DFLogBuffer colbuf = new DFLogBuffer(file))
                 {
                     PointLatLngAlt lastpos = null;
                     DateTime start = DateTime.MinValue;
@@ -209,15 +244,16 @@ namespace MissionPlanner.Log
 
                                 end = dfItem.time;
 
-                                // add distance
-                                loginfo.DistTraveled += (float)lastpos.GetDistance(pos);
-
                                 // set home
                                 if (loginfo.Home == null)
                                     loginfo.Home = pos;
 
                                 if (dfItem.time > tia.AddSeconds(1))
                                 {
+                                    // add distance
+                                    loginfo.DistTraveled += (float)lastpos.GetDistance(pos);
+                                    lastpos = pos;
+
                                     // ground speed  > 0.2 or  alt > homelat+2
                                     if (double.Parse(dfItem["Spd"], CultureInfo.InvariantCulture) > 0.2 ||
                                         pos.Alt > (loginfo.Home.Alt + 2))
@@ -236,11 +272,13 @@ namespace MissionPlanner.Log
 
                     loginfo.Aircraft = 0;//colbuf.dflog.param[""];
 
-                    loginfo.Frame = "Unknown";//mine.MAV.aptype.ToString();
+                    loginfo.Frame = "DFLog Unknown";//mine.MAV.aptype.ToString();
                 }
             }
 
-            logs.Add(loginfo);
+            lock (logs)
+                logs.Add(loginfo);
+            log.Info("Finished " + file);
         }
 
         static object locker = new object();
@@ -259,12 +297,14 @@ namespace MissionPlanner.Log
                 get { return Path.GetDirectoryName(fullname); }
             }
 
-            public Image img { get; set; }
+            internal string imgfile { get; set; }
+            private Bitmap image = null;
+            public Image img { get { lock (this) { if (image == null && !String.IsNullOrEmpty(imgfile)) image = GetBitmap(imgfile); return image; } } }
             public string Duration { get; set; }
             public DateTime Date { get; set; }
-            public int Aircraft { get; set; }
+            public uint Aircraft { get; set; }
             public long Size { get; set; }
-            public PointLatLngAlt Home {get;set;}
+            public PointLatLngAlt Home { get; set; }
 
             public string Frame { get; set; }
 
@@ -279,12 +319,20 @@ namespace MissionPlanner.Log
             }
         }
 
+        private static Bitmap GetBitmap(string imgFile)
+        {
+            using (var file = File.Open(imgFile, FileMode.Open, FileAccess.Read))
+            {
+                return new Bitmap(file);
+            }
+        }
+
         private void objectListView1_FormatCell(object sender, FormatCellEventArgs e)
         {
             if (e.ColumnIndex != 0)
                 return;
 
-            loginfo info = (loginfo) e.Model;
+            loginfo info = (loginfo)e.Model;
 
             if (info.img == null)
                 return;
@@ -294,12 +342,6 @@ namespace MissionPlanner.Log
             decoration.AdornmentCorner = ContentAlignment.TopCenter;
             decoration.ReferenceCorner = ContentAlignment.TopCenter;
             e.SubItem.Decoration = decoration;
-
-            // TextDecoration td = new TextDecoration("test", ContentAlignment.BottomCenter);
-
-            // e.SubItem.Decorations.Add(td);
-
-            Application.DoEvents();
         }
 
         /// <summary>
@@ -320,10 +362,86 @@ namespace MissionPlanner.Log
 
             if (fbd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                files.Clear();
+                lock (files)
+                    files.Clear();
                 createFileList(fbd.SelectedPath);
                 System.Threading.ThreadPool.QueueUserWorkItem(queueRunner);
             }
+        }
+
+        private void btnDeleteLog_Click(object sender, EventArgs e)
+        {
+            if (CustomMessageBox.Show(string.Format("Do you really want to delete {0} logs?", objectListView1.SelectedIndices.Count), MessageBoxButtons: CustomMessageBox.MessageBoxButtons.YesNo) == CustomMessageBox.DialogResult.Yes)
+            {
+                foreach (int i in objectListView1.SelectedIndices)
+                {
+                    var item = (OLVListItem)objectListView1.Items[i];
+                    var log = (LogIndex.loginfo)item.RowObject;
+
+                    if (log.fullname == "--- DELETED ---")
+                        continue;
+
+                    var files = Directory.GetFiles(Path.GetDirectoryName(log.fullname), Path.GetFileName(log.fullname) + ".*").ToList();
+                    if (Path.GetExtension(log.fullname).Equals(".TLOG", StringComparison.InvariantCultureIgnoreCase))
+                        files.Add(Path.ChangeExtension(log.fullname, "rlog"));
+
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            if (File.Exists(file))
+                                File.Delete(file);
+                        }
+                        catch (Exception ex)
+                        {
+                            CustomMessageBox.Show(string.Format("Error has been occured when trying to delete {0}\r\n{1}", log.fullname, ex.Message));
+                        }
+                    }
+
+                    log.fullname = "--- DELETED ---";
+                    log.imgfile = null;
+                    log.TimeInAir = 0;
+                    log.DistTraveled = 0;
+                    log.Duration = "";
+                }
+
+                objectListView1.Refresh();
+            }
+        }
+
+        private void objectListView1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            btnDeleteLog.Enabled = objectListView1.SelectedIndices.Count > 0;
+
+            float timeInAir = 0;
+            float distTraveled = 0;
+            foreach (int i in objectListView1.SelectedIndices)
+            {
+                var item = (OLVListItem)objectListView1.Items[i];
+                var log = (LogIndex.loginfo)item.RowObject;
+
+                timeInAir += log.TimeInAir;
+                distTraveled += log.DistTraveled;
+
+            }
+
+            lbStats.Text = string.Format("Selected: {2}; TimeInAir: {0}; DistTraveled: {1}m", ToHours(timeInAir), (int)distTraveled, objectListView1.SelectedIndices.Count);
+        }
+
+        private static string ToHours(float seconds)
+        {
+            var hours = (int)Math.Floor(seconds / 3600);
+            var minutes = (int)Math.Floor((seconds % 3600) / 60);
+            var sec = (int)(seconds % 60);
+
+            return (hours < 10 ? "0" : "") + hours + ":" + minutes.ToString("D2") + ":" + sec.ToString("D2");
+        }
+
+        private void but_defaultlogdir_Click(object sender, EventArgs e)
+        {
+            createFileList(Settings.Instance.LogDir);
+
+            System.Threading.ThreadPool.QueueUserWorkItem(queueRunner);
         }
     }
 }

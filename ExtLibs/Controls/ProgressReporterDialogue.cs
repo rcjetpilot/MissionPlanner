@@ -4,6 +4,8 @@ using System.Threading;
 using System.Windows.Forms;
 using System.Reflection;
 using log4net;
+using MissionPlanner.MsgBox;
+using MissionPlanner.Utilities;
 
 namespace MissionPlanner.Controls
 {
@@ -14,29 +16,29 @@ namespace MissionPlanner.Controls
     /// Performs operation excplicitely on a threadpool thread due to 
     /// Mono not playing nice with the BackgroundWorker
     /// </remarks>
-    public partial class ProgressReporterDialogue : Form
+    public partial class ProgressReporterDialogue : Form, IProgressReporterDialogue
     {
         private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private Exception workerException;
-        public ProgressWorkerEventArgs doWorkArgs;
+        public ProgressWorkerEventArgs doWorkArgs { get; set; }
 
         internal object locker = new object();
         internal int _progress = -1;
         internal string _status = "";
 
         public bool Running = false;
+        private Thread BGThread;
 
-        public delegate void DoWorkEventHandler(object sender, ProgressWorkerEventArgs e, object passdata = null);
 
         // This is the event that will be raised on the BG thread
-        public event DoWorkEventHandler DoWork;
+        public event Utilities.DoWorkEventHandler DoWork;
 
         public ProgressReporterDialogue()
         {
             InitializeComponent();
             doWorkArgs = new ProgressWorkerEventArgs();
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
+            
             this.btnClose.Visible = false;
 
         }
@@ -59,6 +61,8 @@ namespace MissionPlanner.Controls
         {
             Running = true;
             log.Info("RunBackgroundOperation");
+
+            BGThread = Thread.CurrentThread;
 
             try
             {
@@ -103,7 +107,7 @@ namespace MissionPlanner.Controls
             try
             {
                 log.Info("DoWork");
-                if (this.DoWork != null) this.DoWork(this, doWorkArgs);
+                if (this.DoWork != null) this.DoWork(this);
                 log.Info("DoWork Done");
             }
             catch(Exception e)
@@ -112,9 +116,19 @@ namespace MissionPlanner.Controls
                 // Examine the work args, if there is an error, then display that and the exception details
                 // Otherwise display 'Unexpected error' and exception details
                 timer1.Stop();
-                ShowDoneWithError(e, doWorkArgs.ErrorMessage);
-                Running = false;
-                return;
+                if (doWorkArgs.CancelRequested && doWorkArgs.CancelAcknowledged)
+                {
+                    // must be actioned inside the catch, as this thread was just aborted
+                    Running = false;
+                    this.BeginInvoke((MethodInvoker)this.Close);
+                    return;
+                }
+                else
+                {
+                    ShowDoneWithError(e, doWorkArgs.ErrorMessage);
+                    Running = false;
+                    return;
+                }
             }
 
             // stop the timer
@@ -192,9 +206,10 @@ namespace MissionPlanner.Controls
                     this.progressBar1.Value = 100;
                     this.btnCancel.Visible = false;
                     this.btnClose.Visible = false;
+                    this.ControlBox = true;
                 });
 
-            Thread.Sleep(100);
+            Thread.Sleep(100);         
 
             this.BeginInvoke((MethodInvoker)this.Close);
         }
@@ -208,7 +223,7 @@ namespace MissionPlanner.Controls
         // - Change the Cancel button to 'Close', so that the user can look at the exception message a bit
         private void ShowDoneWithError(Exception exception, string doWorkArgs)
         {
-            var errMessage = doWorkArgs ?? "There was an unexpected error";
+            var errMessage = doWorkArgs ?? "There was an unexpected error (" + exception.Message + ")";
 
             if (this.Disposing || this.IsDisposed)
                 return;
@@ -286,7 +301,8 @@ namespace MissionPlanner.Controls
                           + Environment.NewLine + Environment.NewLine
                           + this.workerException.StackTrace;
 
-            CustomMessageBox.Show(message,"Exception Details",MessageBoxButtons.OK,MessageBoxIcon.Information);
+            MsgBox.CustomMessageBox.ShowTextBox(message, "Exception Details", MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         /// <summary>
@@ -318,6 +334,17 @@ namespace MissionPlanner.Controls
                 } // Exception System.ArgumentOutOfRangeException: Value of '-12959800' is not valid for 'Value'. 'Value' should be between 'minimum' and 'maximum'.
                 catch { } // clean fail. and ignore, chances are we will hit this again in the next 100 ms
             }
+
+            if (doWorkArgs != null && doWorkArgs.CancelRequested && doWorkArgs.ForceExit)
+            {
+                if (BGThread != null && BGThread.IsAlive)
+                {
+                    try
+                    {
+                        BGThread.Abort();
+                    } catch { }
+                }
+            }
         }
 
         private void ProgressReporterDialogue_Load(object sender, EventArgs e)
@@ -325,25 +352,10 @@ namespace MissionPlanner.Controls
             this.Focus();
         }
 
-    }
-
-    public class ProgressWorkerEventArgs : EventArgs
-    {
-        public string ErrorMessage;
-        volatile bool _CancelRequested = false;
-        public bool CancelRequested
+        void IProgressReporterDialogue.BeginInvoke(Delegate method)
         {
-            get
-            {
-                return _CancelRequested;
-            }
-            set
-            {
-                _CancelRequested = value; if (CancelRequestChanged != null) CancelRequestChanged(this, new PropertyChangedEventArgs("CancelRequested"));
-            }
+            this.BeginInvoke(method);
         }
-        public volatile bool CancelAcknowledged;
-
-        public event PropertyChangedEventHandler CancelRequestChanged;
     }
+
 }

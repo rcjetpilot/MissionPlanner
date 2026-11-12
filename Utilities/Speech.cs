@@ -1,16 +1,18 @@
+using log4net;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Speech.Synthesis;
 using System.Text.RegularExpressions;
-using log4net;
 
 namespace MissionPlanner.Utilities
 {
-    public class Speech: IDisposable
+    public class Speech : IDisposable, ISpeech
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        public bool speechEnable { get; set; } = false;
 
         SpeechSynthesizer _speechwindows;
         System.Diagnostics.Process _speechlinux;
@@ -19,9 +21,10 @@ namespace MissionPlanner.Utilities
 
         bool MONO = false;
 
-        public bool IsReady 
+        public bool IsReady
         {
-            get {
+            get
+            {
                 if (MONO)
                 {
                     return _state == SynthesizerState.Ready;
@@ -61,7 +64,10 @@ namespace MissionPlanner.Utilities
 
         public void SpeakAsync(string text)
         {
-            if (text == null)
+            if (!MainV2.speechEnabled())
+                return;
+
+            if (text == null || String.IsNullOrWhiteSpace(text))
                 return;
 
             text = Regex.Replace(text, @"\bPreArm\b", "Pre Arm", RegexOptions.IgnoreCase);
@@ -70,6 +76,8 @@ namespace MissionPlanner.Utilities
             text = Regex.Replace(text, @"\b([0-9]+)m\b", "$1 meters", RegexOptions.IgnoreCase);
             text = Regex.Replace(text, @"\b([0-9]+)ft\b", "$1 feet", RegexOptions.IgnoreCase);
             text = Regex.Replace(text, @"\b([0-9]+)\bbaud\b", "$1 baudrate", RegexOptions.IgnoreCase);
+            // Stop, for example, QHover from being pronounced "kohver"
+            text = Regex.Replace(text, @"\bq((?!u)[a-z]+)", "q $1", RegexOptions.IgnoreCase);
 
             if (MONO)
             {
@@ -81,7 +89,9 @@ namespace MissionPlanner.Utilities
                         _speechlinux = new System.Diagnostics.Process();
                         _speechlinux.StartInfo.RedirectStandardInput = true;
                         _speechlinux.StartInfo.UseShellExecute = false;
-                        _speechlinux.StartInfo.FileName = "festival";
+                        _speechlinux.StartInfo.FileName = "/bin/bash";
+                        _speechlinux.StartInfo.Arguments = "-c festival";
+                        _speechlinux.StartInfo.WorkingDirectory = "/bin";
                         _speechlinux.Start();
                         _speechlinux.Exited += new EventHandler(_speechlinux_Exited);
 
@@ -95,14 +105,26 @@ namespace MissionPlanner.Utilities
 
                     _speechlinux.Close();
                 }
-                catch { } // ignore errors
+                catch (Exception ex) { log.Error(ex); } // ignore errors
+
 
                 _state = SynthesizerState.Ready;
             }
             else
             {
-                if (_speechwindows != null)
-                    _speechwindows.SpeakAsync(text);
+                try
+                {
+                    if (_speechwindows != null)
+                    {
+                        PromptBuilder pb = new PromptBuilder(CultureInfo.CurrentUICulture);
+                        pb.AppendText(text);
+                        _speechwindows.SpeakAsync(pb);
+                    }
+                }
+                catch (COMException)
+                {
+
+                }
             }
 
             log.Info("TTS: say " + text);
@@ -130,7 +152,7 @@ namespace MissionPlanner.Utilities
             {
                 try
                 {
-                    if (_speechwindows!= null)
+                    if (_speechwindows != null)
                         _speechwindows.SpeakAsyncCancelAll();
                 }
                 catch (System.PlatformNotSupportedException)

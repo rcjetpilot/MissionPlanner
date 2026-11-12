@@ -185,16 +185,22 @@ namespace GMap.NET
          foreach(var pr in provider.Overlays)
          {
             Exception ex;
-            PureImage img;
+            PureImage img = null;
 
             // tile number inversion(BottomLeft -> TopLeft)
             if(pr.InvertedAxisY)
             {
-               img = GMaps.Instance.GetImageFrom(pr, new GPoint(p.X, maxOfTiles.Height - p.Y), zoom, out ex);
+               if (GMaps.Instance.CheckImageExist(pr, new GPoint(p.X, maxOfTiles.Height - p.Y), zoom, out ex))
+                  return true;
+               else
+                  img = GMaps.Instance.GetImageFrom(pr, new GPoint(p.X, maxOfTiles.Height - p.Y), zoom, out ex);
             }
             else // ok
             {
-               img = GMaps.Instance.GetImageFrom(pr, p, zoom, out ex);
+               if (GMaps.Instance.CheckImageExist(pr, p, zoom, out ex))
+                  return true;
+               else
+                  img = GMaps.Instance.GetImageFrom(pr, p, zoom, out ex);
             }
 
             if(img != null)
@@ -222,6 +228,7 @@ namespace GMap.NET
             list.Clear();
             list = null;
          }
+         worker.ReportProgress(0, 0);
          list = provider.Projection.GetAreaTileList(area, zoom, 0);
          maxOfTiles = provider.Projection.GetTileMatrixMaxXY(zoom);
          all = list.Count;
@@ -295,8 +302,10 @@ namespace GMap.NET
 
       void worker_ProgressChanged(object sender, ProgressChangedEventArgs e)
       {
+         try{
          this.label1.Text = "Fetching tile at zoom (" + zoom + "): " + ((int)e.UserState).ToString() + " of " + all + ", complete: " + e.ProgressPercentage.ToString() + "%";
-         this.progressBarDownload.Value = e.ProgressPercentage;
+         int percent = Math.Max(0, Math.Min(100, e.ProgressPercentage));    
+         this.progressBarDownload.Value = percent;
 
          if (Overlay != null)
          {
@@ -322,6 +331,10 @@ namespace GMap.NET
                  GMapMarkerTile m = new GMapMarkerTile(p, (int)(Overlay.Control.MapProvider.Projection.TileSize.Width / sizeDiff));
                  Overlay.Markers.Add(m);
              }
+         }
+         }
+         catch (Exception)
+         {
          }
       }
 
@@ -360,7 +373,7 @@ namespace GMap.NET
          Size = new System.Drawing.Size(size, size);
       }
 
-      public override void OnRender(Graphics g)
+      public override void OnRender(IGraphics g)
       {
          g.FillRectangle(Fill, new System.Drawing.Rectangle(LocalPosition.X, LocalPosition.Y, Size.Width, Size.Height));
       }

@@ -854,6 +854,7 @@
             // 
             resources.ApplyResources(this.BUT_writePIDS, "BUT_writePIDS");
             this.BUT_writePIDS.Name = "BUT_writePIDS";
+            this.BUT_writePIDS.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
             this.BUT_writePIDS.UseVisualStyleBackColor = true;
             this.BUT_writePIDS.Click += new System.EventHandler(this.BUT_writePIDS_Click);
             // 
@@ -861,6 +862,7 @@
             // 
             resources.ApplyResources(this.BUT_rerequestparams, "BUT_rerequestparams");
             this.BUT_rerequestparams.Name = "BUT_rerequestparams";
+            this.BUT_rerequestparams.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
             this.BUT_rerequestparams.UseVisualStyleBackColor = true;
             this.BUT_rerequestparams.Click += new System.EventHandler(this.BUT_rerequestparams_Click);
             // 
@@ -992,12 +994,12 @@
             // 
             resources.ApplyResources(this.BUT_refreshpart, "BUT_refreshpart");
             this.BUT_refreshpart.Name = "BUT_refreshpart";
+            this.BUT_refreshpart.TextColorNotEnabled = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(87)))), ((int)(((byte)(4)))));
             this.BUT_refreshpart.UseVisualStyleBackColor = true;
             this.BUT_refreshpart.Click += new System.EventHandler(this.BUT_refreshpart_Click);
             // 
             // ConfigArduplane
             // 
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
             this.Controls.Add(this.BUT_refreshpart);
             this.Controls.Add(this.groupBox5);
             this.Controls.Add(this.groupBox4);

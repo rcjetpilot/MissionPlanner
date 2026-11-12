@@ -1,19 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
+﻿using MissionPlanner.Utilities;
+using System;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows.Forms;
-using MissionPlanner.Utilities;
 
 namespace MissionPlanner.Controls
 {
     public partial class Video : Form
     {
+        private readonly GStreamer stream = new GStreamer();
+        
         public Video()
         {
             InitializeComponent();
@@ -25,7 +20,7 @@ namespace MissionPlanner.Controls
             chk.Text = "Display External";
             flowLayoutPanel1.Controls.Add(chk);
 
-            foreach (var zeroconfHost in ZeroConf.Hosts)
+            foreach (var zeroconfHost in ZeroConf.RtspHosts)
             {
                 Label lbl = new Label();
                 lbl.Text = zeroconfHost.Id;
@@ -52,12 +47,12 @@ namespace MissionPlanner.Controls
                                     but.Text = service.Value.Properties[0]["name"] + "     \n" +
                                                matchs.Groups[1].Value.ToString() + " - " + width + "x" + height;
                                     but.Size = TextRenderer.MeasureText(but.Text + "   ", but.Font);
-                                    but.Click += delegate(object o, EventArgs args)
+                                    but.Click += delegate (object o, EventArgs args)
                                     {
-                                        GStreamer.Start(String.Format(
-                                            "rtspsrc location=rtsp://{0}:{1}{2}?width={3}&height={4} ! application/x-rtp ! rtpjpegdepay",
+                                        stream.Start(String.Format(
+                                            "rtspsrc location=rtsp://{0}:{1}{2}?width={3}&height={4} ! application/x-rtp ! rtpjpegdepay ! videoconvert ! video/x-raw,format=BGRA ! appsink name=outsink",
                                             zeroconfHost.IPAddress, service.Value.Port, service.Value.PTR, width,
-                                            height), chk.Checked, chk.Checked);
+                                            height));
                                     };
                                     flowLayoutPanel1.Controls.Add(but);
                                 }

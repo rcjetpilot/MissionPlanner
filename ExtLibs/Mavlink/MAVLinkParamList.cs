@@ -1,14 +1,14 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Threading;
 
 public partial class MAVLink
 {
-    public class MAVLinkParamList: List<MAVLinkParam>
+    public class MAVLinkParamList : List<MAVLinkParam>, INotifyPropertyChanged
     {
-        object locker = new object();
+        ReaderWriterLock locker = new ReaderWriterLock();
 
         public int TotalReported { get; set; }
 
@@ -17,17 +17,101 @@ public partial class MAVLink
             get { return this.Count; }
         }
 
+        // The index of the first param of each name asked for, -1 when there is none. The list can also
+        // be changed through List<T>, behind this class, so the answers are only kept for as long as the
+        // list's own change counter stays the same and no param has been renamed.
+        readonly Dictionary<string, int> nameIndex = new Dictionary<string, int>();
+        int nameIndexVersion = -1;
+        int nameIndexNameChanges;
+
+        static readonly Func<List<MAVLinkParam>, int> listVersion = GetListVersion();
+
+        /// <summary>
+        /// reads the change counter of a List, null where the runtime's List has none we can read
+        /// </summary>
+        static Func<List<MAVLinkParam>, int> GetListVersion()
+        {
+            try
+            {
+                var field = typeof(List<MAVLinkParam>).GetField("_version",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (field == null || field.FieldType != typeof(int))
+                    return null;
+
+                try
+                {
+                    var list = System.Linq.Expressions.Expression.Parameter(typeof(List<MAVLinkParam>), "list");
+                    return System.Linq.Expressions.Expression.Lambda<Func<List<MAVLinkParam>, int>>(
+                        System.Linq.Expressions.Expression.Field(list, field), list).Compile();
+                }
+                catch
+                {
+                    return list => (int) field.GetValue(list);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        int ScanForName(string name)
+        {
+            int count = Count;
+            for (int index = 0; index < count; index++)
+            {
+                if (base[index].Name == name)
+                    return index;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// index of the first param with this name, or -1. The caller holds the reader or writer lock
+        /// </summary>
+        int IndexOfName(string name)
+        {
+            if (listVersion == null || name == null)
+                return ScanForName(name);
+
+            lock (nameIndex)
+            {
+                int version = listVersion(this);
+                int namechanges = Volatile.Read(ref MAVLinkParam.NameChanges);
+                if (version != nameIndexVersion || namechanges != nameIndexNameChanges)
+                {
+                    nameIndex.Clear();
+                    nameIndexVersion = version;
+                    nameIndexNameChanges = namechanges;
+                }
+
+                int index;
+                if (!nameIndex.TryGetValue(name, out index))
+                {
+                    index = ScanForName(name);
+                    nameIndex[name] = index;
+                }
+
+                return index;
+            }
+        }
+
         public MAVLinkParam this[string name]
-        { 
+        {
             get
             {
-                lock (locker)
+                try
                 {
-                    foreach (var item in this)
-                    {
-                        if (item.Name == name)
-                            return item;
-                    }
+                    locker.AcquireReaderLock(1000);
+                    int index = IndexOfName(name);
+                    if (index >= 0)
+                        return base[index];
+                }
+                finally
+                {
+                    if (locker.IsReaderLockHeld)
+                        locker.ReleaseReaderLock();
                 }
 
                 return null;
@@ -35,23 +119,58 @@ public partial class MAVLink
 
             set
             {
-                int index = 0;
-                lock (locker)
+                try
                 {
-                    foreach (var item in this)
+                    locker.AcquireWriterLock(1000);
+                    int index = IndexOfName(name);
+                    if (index >= 0)
                     {
-                        if (item.Name == name)
-                        {
-                            this[index] = value;
-                            return;
-                        }
-
-                        index++;
+                        base[index] = value;
+                        OnPropertyChanged();
+                        return;
                     }
 
-                    this.Add(value);
+                    base.Add(value);
+                }
+                finally
+                {
+                    locker.ReleaseWriterLock();
                 }
             }
+        }
+
+        // Only works if one param from the name list if found, will fail if multiple list items are found
+        // for use in cases of param conversion where the two names will not coexist
+        public MAVLinkParam this[string[] names]
+        {
+            get
+            {
+                MAVLinkParam item = null;
+                foreach (var s in names)
+                {
+                    MAVLinkParam new_item = this[s];
+                    if (new_item != null)
+                    {
+                        if (item != null)
+                        {
+                            // found multiple items in list
+                            return null;
+                        }
+                        item = new_item;
+                    }
+                }
+                return item;
+            }
+
+            set
+            {
+                MAVLinkParam item = this[names];
+                if (item != null)
+                {
+                    item = value;
+                }
+            }
+
         }
 
         public IEnumerable<string> Keys
@@ -67,13 +186,16 @@ public partial class MAVLink
 
         public bool ContainsKey(string v)
         {
-            lock (locker)
+            try
             {
-                foreach (MAVLinkParam item in this)
-                {
-                    if (item.Name == v)
-                        return true;
-                }
+                locker.AcquireReaderLock(1000);
+                if (IndexOfName(v) >= 0)
+                    return true;
+            }
+            finally
+            {
+                if (locker.IsReaderLockHeld)
+                    locker.ReleaseReaderLock();
             }
 
             return false;
@@ -81,38 +203,70 @@ public partial class MAVLink
 
         public new void Clear()
         {
-            lock (locker)
+            try
             {
+                locker.AcquireWriterLock(1000);
                 TotalReported = 0;
                 base.Clear();
+            }
+            finally
+            {
+                locker.ReleaseWriterLock();
             }
         }
 
         public new void Add(MAVLinkParam item)
         {
-            lock (locker)
+            try
             {
-                base.Add(item);
+                locker.AcquireWriterLock(1000);
+                this[item.Name] = item;
+            }
+            finally
+            {
+                locker.ReleaseWriterLock();
             }
         }
 
         public new void AddRange(IEnumerable<MAVLinkParam> collection)
         {
-            lock (locker)
+            try
             {
+                locker.AcquireWriterLock(1000);
                 base.AddRange(collection);
+                OnPropertyChanged();
+            }
+            finally
+            {
+                locker.ReleaseWriterLock();
             }
         }
 
-        public static implicit operator Dictionary<string,double>(MAVLinkParamList list)
+        public static implicit operator Dictionary<string, double>(MAVLinkParamList list)
         {
             var copy = new Dictionary<string, double>();
-            foreach (MAVLinkParam item in list.ToArray())
+            try
             {
-                copy[item.Name] = item.Value;
+                list.locker.AcquireReaderLock(1000);
+                foreach (MAVLinkParam item in list.ToArray())
+                {
+                    copy[item.Name] = item.Value;
+                }
+            }
+            finally
+            {
+                if (list.locker.IsReaderLockHeld)
+                    list.locker.ReleaseReaderLock();
             }
 
             return copy;
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

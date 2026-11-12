@@ -1,15 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Windows.Forms;
-using GMap.NET.WindowsForms;
 
-namespace MissionPlanner
+namespace MissionPlanner.Grid
 {
     public class GridPlugin : MissionPlanner.Plugin.Plugin
     {
-        
+
 
         ToolStripMenuItem but;
 
@@ -35,29 +31,6 @@ namespace MissionPlanner
 
         public override bool Loaded()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(GridUI));
-            var temp = (string)(resources.GetObject("$this.Text"));
-
-            but = new ToolStripMenuItem(temp);
-            but.Click += but_Click;
-
-            bool hit = false;
-            ToolStripItemCollection col = Host.FPMenuMap.Items;
-            int index = col.Count;
-            foreach (ToolStripItem item in col)
-            {
-                if (item.Text.Equals(Strings.AutoWP))
-                {
-                    index = col.IndexOf(item);
-                    ((ToolStripMenuItem)item).DropDownItems.Add(but);
-                    hit = true;
-                    break;
-                }
-            }
-
-            if (hit == false)
-                col.Add(but);
-
             return true;
         }
 
@@ -75,7 +48,7 @@ namespace MissionPlanner
                 {
                     if (
                         CustomMessageBox.Show("No polygon defined. Load a file?", "Load File", MessageBoxButtons.YesNo) ==
-                        DialogResult.Yes)
+                        (int)DialogResult.Yes)
                     {
                         gridui.LoadGrid();
                         gridui.ShowDialog();
